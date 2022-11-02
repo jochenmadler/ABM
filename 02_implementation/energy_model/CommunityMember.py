@@ -28,7 +28,7 @@ class CommunityMember(mesa.Agent):
         self.ev_soc_min = ev_soc_min
         self.ev_soc_t0 = ev_soc_t0
         self.bl_flexibility = load_flexibility
-        self.number = 0
+        #self.number = 0  # TODO: remove, bc. not used (?)
 
         # optimization parameter
         self.variable_bounds = self.model.database.optimization_parameter['variable_bound']
@@ -50,33 +50,20 @@ class CommunityMember(mesa.Agent):
         self.m.Params.OutputFlag = 0
 
         # optimization variables
-        self.optimization_results = None
-        self.price_g_d, self.price_g_s, self.price_n_d, self.price_n_s = None, None, None, None
-        self.g_d, self.g_s, self.n_d, self.n_s = None, None, None, None
-        self.g_d_binary, self.g_s_binary = None, None
-        self.n_d_binary, self.n_s_binary = None, None
-        self.PV_max, self.pv, self.pv_surplus = None, None, None
-        self.D_bl, self.d_bl = None, None
-        self.hb_c_binary, self.hb_d_binary = None, None
-        self.hb_c, self.hb_d, self.hb_soc_t = None, None, None
-        self.ev_c_binary, self.ev_d_binary = None, None
-        self.ev_c, self.ev_d, self.ev_soc_t = None, None, None
-        self.D_ev, self.L_ev, self.ev_at_home = None, None, None
-        self.costs_t = None
-        self.costs_total = 0
 
     def update_data(self):
         # obtain latest data slice from model's time_index
         self.PV_max = self.model.database.qh_pv_generation_factors['qh_generation_factor'][self.model.time_index].apply(
             lambda x: x * self.annual_effective_pv_radiation_kWh)
         self.D_bl = self.model.database.qh_residential_load_profiles[self.residential_type][self.model.time_index]
-        d_ev = self.model.database.qh_residential_ev_load_profiles['consumption_' + self.residential_type][
+        D_ev_temp = self.model.database.qh_residential_ev_load_profiles['consumption_' + self.residential_type][
             self.model.time_index]
         # cut off ev demand beyond max. ev battery capacity: this energy will be (re-)charged during the journey
-        self.D_ev = pd.Series([i if i < self.ev_soc_max else self.ev_soc_max for i in d_ev], name=d_ev.name,
-                              index=d_ev.index) if self.nr_evs > 0 else pd.Series([0] * len(d_ev), index=d_ev.index)
+        self.D_ev = pd.Series([i if i < self.ev_soc_max else self.ev_soc_max for i in D_ev_temp], name=D_ev_temp.name,
+                              index=D_ev_temp.index) if self.nr_evs > 0 else pd.Series([0] * len(D_ev_temp),
+                                                                                       index=D_ev_temp.index)
         self.L_ev = self.model.database.qh_residential_ev_load_profiles['location_' + self.residential_type][
-            self.model.time_index] if self.nr_evs > 0 else pd.Series([0] * len(d_ev), index=d_ev.index)
+            self.model.time_index] if self.nr_evs > 0 else pd.Series([0] * len(D_ev_temp), index=D_ev_temp.index)
         self.price_g_d = self.model.database.qh_electricity_price_kWh['price_ct_kWh'][self.model.time_index]
         self.price_g_s = pd.Series(self.model.database.optimization_parameter['fit_tariff'], self.model.time_index,
                                    name='price_g_s')
@@ -110,7 +97,7 @@ class CommunityMember(mesa.Agent):
         self.ev_d_binary = self.m.addVars(time_index, vtype=GRB.BINARY, name='ev_d_binary')
         self.ev_soc = self.m.addVars(time_index, vtype=GRB.CONTINUOUS, name='ev_soc_t', lb=self.ev_soc_min,
                                      ub=self.ev_soc_max)
-        # self.l_ev_zero = self.m.addVars(time_index, vtype=GRB.BINARY, name='one', ub=0)
+        # self.l_ev_zero = self.m.addVars(time_index, vtype=GRB.BINARY, name='one', ub=0) # TODO: remove?
         self.ev_at_home = self.m.addVars(time_index, vtype=GRB.BINARY, name='ev_at_home')
 
         # create constraints
@@ -119,27 +106,27 @@ class CommunityMember(mesa.Agent):
             if self.prosumer:
                 # possible to use less than the actually generated pv energy
                 self.m.addConstr(self.pv[i] <= self.PV_max[i], name='pv_ub')
-                # if pv > base load, pv_surplus = 1, else 0
-                self.m.addConstr(self.pv[i] >= self.D_bl[i] + self.eps - self.big_M * (1 - self.pv_surplus[i]),
-                                 name='pv_surplus_true')
-                self.m.addConstr(self.pv[i] <= self.D_bl[i] + self.big_M * self.pv_surplus[i], name='pv_surplus_false')
+                # if pv > D_bl, pv_surplus = 1, else 0
+                self.m.addConstr(self.big_M * self.pv_surplus[i] >= self.pv[i] - self.D_bl[i], name='pv_surplus_true')
+                self.m.addConstr(self.big_M * (1 - self.pv_surplus[i]) >= self.D_bl[i] - self.pv[i],
+                                 name='pv_surplus_false')
                 # indicator constraints: no energy can be sold/bought if pv deficit/surplus
                 self.m.addConstr((self.pv_surplus[i] == 1) >> (self.g_d[i] <= 0), name='pv_surplus_true,g_demand_zero')
                 self.m.addConstr((self.pv_surplus[i] == 1) >> (self.n_d[i] <= 0), name='pv_surplus_true,n_demand_zero')
                 self.m.addConstr((self.pv_surplus[i] == 0) >> (self.g_s[i] <= 0), name='pv_surplus_false,g_supply_zero')
                 self.m.addConstr((self.pv_surplus[i] == 0) >> (self.n_s[i] <= 0), name='pv_surplus_false,n_supply_zero')
                 # grid: can either be sold to or bought from at any time step
-                self.m.addConstr(self.g_d_binary[i] * self.big_M >= self.g_d[i])
-                self.m.addConstr(self.g_s_binary[i] * self.big_M >= self.g_s[i])
-                self.m.addConstr(self.g_d_binary[i] + self.g_s_binary[i] <= 1)
+                self.m.addConstr(self.g_d_binary[i] * self.big_M >= self.g_d[i], name='g_d_binary')
+                self.m.addConstr(self.g_s_binary[i] * self.big_M >= self.g_s[i], name='g_s_binary')
+                self.m.addConstr(self.g_d_binary[i] + self.g_s_binary[i] <= 1, name='sum(g_d_binary,g_s_binary)')
                 # neighbors: can either be sold to or bought from at any time step
-                self.m.addConstr(self.n_d_binary[i] * self.big_M >= self.n_d[i])
-                self.m.addConstr(self.n_s_binary[i] * self.big_M >= self.n_s[i])
-                self.m.addConstr(self.n_d_binary[i] + self.n_s_binary[i] <= 1)
+                self.m.addConstr(self.n_d_binary[i] * self.big_M >= self.n_d[i], name='n_d_binary')
+                self.m.addConstr(self.n_s_binary[i] * self.big_M >= self.n_s[i], name='n_s_binary')
+                self.m.addConstr(self.n_d_binary[i] + self.n_s_binary[i] <= 1, name='sum(n_d_binary,n_s_binary)')
                 # home battery: can either be charged or discharged at any time step
-                self.m.addConstr(self.hb_c_binary[i] * self.big_M >= self.hb_c[i])
-                self.m.addConstr(self.hb_d_binary[i] * self.big_M >= self.hb_d[i])
-                self.m.addConstr(self.hb_c_binary[i] + self.hb_d_binary[i] <= 1)
+                self.m.addConstr(self.hb_c_binary[i] * self.big_M >= self.hb_c[i], name='hb_c_binary')
+                self.m.addConstr(self.hb_d_binary[i] * self.big_M >= self.hb_d[i], name='hb_d_binary')
+                self.m.addConstr(self.hb_c_binary[i] + self.hb_d_binary[i] <= 1, name='sum(hb_c_binary,hb_d_binary)')
                 # home battery state update considering efficiency losses
                 if i == self.model.internal_t:
                     self.m.addConstr(
@@ -168,12 +155,12 @@ class CommunityMember(mesa.Agent):
                 self.m.addConstr(self.ev_c[i] <= 0, name='no_ev,no_c')
                 self.m.addConstr(self.ev_d[i] <= 0, name='no_ev,no_d')
                 self.m.addConstr(self.ev_soc[i] <= self.ev_soc_t0, name='no_ev,no_ev_soc')
-                self.m.addConstr(self.ev_at_home[i] <= 0, name='no_ev,no_ev_never_at_home')
+                self.m.addConstr(self.ev_at_home[i] <= 0, name='no_ev,ev_never_at_home')
             else:
                 # ev: can either be charged or discharged at any time step
-                self.m.addConstr(self.ev_c_binary[i] * self.big_M >= self.ev_c[i])
-                self.m.addConstr(self.ev_d_binary[i] * self.big_M >= self.ev_d[i])
-                self.m.addConstr(self.ev_c_binary[i] + self.ev_d_binary[i] <= 1)
+                self.m.addConstr(self.ev_c_binary[i] * self.big_M >= self.ev_c[i], name='ev_c_binary')
+                self.m.addConstr(self.ev_d_binary[i] * self.big_M >= self.ev_d[i], name='ev_d_binary')
+                self.m.addConstr(self.ev_c_binary[i] + self.ev_d_binary[i] <= 1, name='sum(ev_c_binary,ev_d_binary)')
                 # ev: can only be charged if ev is at home: if L_ev == 0 -> ev_home = 0, else 1
                 self.m.addConstr(int(self.L_ev[i]) >= self.ev_at_home[i], name='ev_at_home_false')
                 self.m.addConstr(int(self.L_ev[i]) <= self.ev_at_home[i] * self.big_M, name='ev_at_home_true')
@@ -211,16 +198,16 @@ class CommunityMember(mesa.Agent):
             # load flexibility: load can deviate from true load by +/- x percent at any time step
             self.m.addConstr(
                 self.g_d[i] - self.g_s[i] + self.n_d[i] - self.n_s[i] + self.pv[i] + self.hb_d[i] - self.hb_c[i] +
-                self.ev_d[i] - self.ev_c[i] <= (1 + self.bl_flexibility) * self.D_bl[i], name="flexible_load_ub")
+                self.ev_d[i] - self.ev_c[i] <= (1 + self.bl_flexibility) * self.D_bl[i], name="bl_flex_t_ub")
             self.m.addConstr(
                 self.g_d[i] - self.g_s[i] + self.n_d[i] - self.n_s[i] + self.pv[i] + self.hb_d[i] - self.hb_c[i] +
-                self.ev_d[i] - self.ev_c[i] >= (1 - self.bl_flexibility) * self.D_bl[i], name="flexible_load_lb")
+                self.ev_d[i] - self.ev_c[i] >= (1 - self.bl_flexibility) * self.D_bl[i], name="bl_flex_t_lb")
 
         # load flexibility: load can vary, but must be satisfied within 24 hours
         self.m.addConstr(gp.quicksum(
             self.g_d[i] - self.g_s[i] + self.n_d[i] - self.n_s[i] + self.pv[i] + self.hb_d[i] - self.hb_c[i] +
             self.ev_d[i] - self.ev_c[i] for i in time_index) >= gp.quicksum(
-            self.D_bl[i] for i in time_index), name='flexible_load_total')
+            self.D_bl[i] for i in time_index), name='bl_flex_sum_total')
         self.m.update()
 
         return
@@ -282,8 +269,6 @@ class CommunityMember(mesa.Agent):
         self.ev_c, self.ev_d = res['ev_c'], res['ev_d']
         self.D_ev, self.ev_soc_t = res['D_ev'], res['ev_soc_t']
         self.D_bl, self.d_bl = res['D_bl'], res['d_bl']
-        # self.costs_t = res['costs_t']
-        # self.costs_total += self.costs_t
         gp.disposeDefaultEnv()
 
         return
@@ -293,11 +278,14 @@ class CommunityMember(mesa.Agent):
         # market clearing: considering p2p max trading volume, update agent's trading quantities
         a_share_n_d = self.n_d / self.model.n_d_volume_t if self.model.n_d_volume_t > 0 else 0
         a_share_n_s = self.n_s / self.model.n_s_volume_t if self.model.n_s_volume_t > 0 else 0
+        a_d_t, a_s_t = self.g_d + self.n_d, self.g_s + self.n_s
         self.n_d = a_share_n_d * self.model.n_max_trading_volume_t
         self.n_s = a_share_n_s * self.model.n_max_trading_volume_t
-        # update agent's costs according to new quantities
-        self.costs_t = self.price_g_d * (self.d_bl - self.n_d) - self.price_g_s * (self.g_s - self.n_s) + \
-                       self.price_n_d * self.n_d - self.price_n_s * self.n_s + self.lcoe_pv * self.pv + \
+        # update agent's energy balance according to new p2p trading quantities
+        self.g_d, self.g_s = a_d_t - self.n_d, a_s_t - self.n_s
+        # update agent's costs according to new p2p trading quantities
+        self.costs_t = self.price_g_d * self.g_d + self.price_n_d * self.n_d - self.price_g_s * self.g_s - \
+                       self.price_n_s * self.n_s + self.lcoe_pv * self.pv + \
                        self.lcoe_hb * self.hb_d + self.lcoe_hb * self.hb_c + \
                        self.lcoe_ev * self.ev_d + self.lcoe_ev * self.ev_c
         self.costs_total += self.costs_t
