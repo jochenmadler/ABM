@@ -6,6 +6,7 @@ import warnings
 from datetime import datetime
 import os
 
+
 # get centroid coordinates for an address in the dataset
 def _0_get_address_coordinates(buildings_gdf, streetname, streetnr):
     if len(buildings_gdf[(buildings_gdf.STREET == streetname) & (buildings_gdf.NUMBER == streetnr)]) == 0:
@@ -65,10 +66,11 @@ def _2_merge_buildings_with_roofs(buildings_gdf_quarter, roofs_gdf):
 
 
 # read in raw data, construct energy community and network based on four addresses
-def setup_network(buildings_file,roofs_file, lower_left=('Lärchenweg', 17), upper_left=('Lärchenweg', 8),
-                  upper_right=('Altenhofstr.', 30),
-                  lower_right=('Föhrenweg', 7), margin_pct=-0.05, only_buildings=True,
-                  custom_communities_path='C:\\Users\joche\FIM Kernkompetenzzentrum\Paper Agent-based Modeling - Dokumente\General\\04 ABM\\03_data\custom_communities'):
+def setup_network(buildings_file, roofs_file, community_dir, lower_left=('Lärchenweg', 17),
+                  upper_left=('Lärchenweg', 8),
+                  upper_right=('Altenhofstr.', 30), lower_right=('Föhrenweg', 7), margin_pct=-0.05,
+                  only_buildings=True):
+    home_path = os.getcwd()
     # read in shape files
     buildings_gdf = gpd.read_file(buildings_file)
     roofs_gdf = gpd.read_file(roofs_file)
@@ -95,7 +97,7 @@ def setup_network(buildings_file,roofs_file, lower_left=('Lärchenweg', 17), upp
     name = name.replace('.', '')[:-1]
     date = datetime.today().strftime('%Y %m %d %Hh%Mm%Ss')
     # navigate to folder and create new directory for current energy community
-    os.chdir(custom_communities_path)
+    os.chdir(community_dir)
     os.makedirs(date)
     os.chdir(date)
     # save energy community as .shp for geometry precision and as .xlsx to modify agents' data
@@ -112,6 +114,8 @@ def setup_network(buildings_file,roofs_file, lower_left=('Lärchenweg', 17), upp
     filtered_buildings_incl_roofs_df['EV_BATTERY_CAPACITY_kW'] = ''
     filtered_buildings_incl_roofs_df['LOAD_FLEXIBILITY'] = ''
     filtered_buildings_incl_roofs_df.to_excel('filtered_buildings_incl_roofs.xlsx')
+    # return to initial path
+    os.chdir(home_path)
 
     return
 
@@ -134,6 +138,5 @@ def load_network(custom_communities_path, custom_community_folder):
         warnings.simplefilter('ignore')
         graph = weights.Gabriel.from_dataframe(filtered_buildings_incl_roofs_gdf.centroid)
         network = graph.to_networkx()
-    positions = dict(zip(network.nodes, centroids))
 
     return network, filtered_buildings_incl_roofs_gdf

@@ -10,6 +10,8 @@ class DataBase():
         self.qh_pv_generation_factors = None
         self.timetable = None
         self.optimization_parameter = None
+        self.start_date = None
+        self.p2p_trading = None
         self.simulation_parameter = simulation_data
         self.check_and_assign_simulation_data(simulation_data)
 
@@ -19,7 +21,7 @@ class DataBase():
             raise Exception('ERROR: simulation parameters are not provided as dictionary')
 
         try:
-            self.buildings = simulation_data['agent_buildings']
+            self.buildings = simulation_data['buildings']
         except:
             raise Exception('ERROR: buildings data not part of simulation data')
 
@@ -49,13 +51,23 @@ class DataBase():
             raise Exception('ERROR: pv generation factors not part of simulation data')
 
         try:
-            self.timetable = simulation_data['qh_electricity_prices_ct_kWh'][['time']]
+            self.timetable = simulation_data['timetable']
         except:
-            raise Exception('ERROR: datetime column for timetable cannot be extracted from simulation data')
+            raise Exception('ERROR: timetable not part of simulation data')
 
         try:
             self.optimization_parameter = simulation_data['optimization_parameter_dict']
         except:
             raise Exception('ERROR: optimization parameter dict not part of simulation data')
+
+        try:
+            self.start_date = simulation_data['start_date']
+        except:
+            raise Exception('ERROR: start_date not part of simulation data')
+
+        try:
+            self.p2p_trading = simulation_data['p2p_trading']
+        except:
+            raise Exception('ERROR: p2p_trading not part of simulation data')
 
         return
