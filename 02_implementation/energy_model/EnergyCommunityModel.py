@@ -1,8 +1,6 @@
 import asyncio
-import random
 import mesa
 import numpy as np
-import pandas as pd
 from DataBase import *
 from CommunityMember import *
 
