@@ -148,10 +148,6 @@ class CommunityMember(mesa.Agent):
                     self.m.addConstr(
                         self.hb_soc[j] - self.hb_c[j] * self.hb_eta_c + self.hb_d[j] / self.hb_eta_d == self.hb_soc_t0,
                         name='hb_soc_update_0')
-                # elif i == t:
-                # self.m.addConstr(
-                #  self.hb_soc[j] - self.hb_c[j] * self.hb_eta_c + self.hb_d[j] / self.hb_eta_d == self.hb_soc_t,
-                # name='hb_soc_update_0')
                 else:
                     self.m.addConstr(self.hb_soc[j] == self.hb_soc[j - 1] + self.hb_c[j] * self.hb_eta_c - self.hb_d[
                         j] / self.hb_eta_d, name=f'hb_soc_update_{j}')
@@ -182,16 +178,6 @@ class CommunityMember(mesa.Agent):
                 self.m.addConstr(self.l_ev[j] <= int(self.L_ev[j]), name=f'l_ev_{j}_f')
                 self.m.addConstr(self.l_ev[j] * self.big_M >= int(self.L_ev[j]), name=f'l_ev_{j}_t')
 
-                # TODO: Delete if it works anyways
-                # self.m.addConstr(int(self.L_ev[i]) >= 1 - self.big_M * (1 - self.ev_home[i]),name='ev_home_true')
-                # self.m.addConstr(int(self.L_ev[i]) <= self.big_M * self.ev_home[i], name='ev_home_false')
-                # if self.L_ev[i] == 1:
-                #    self.m.addConstr(self.ev_c[i] >= 0, name='ev_charging_when_at_home')
-                #    self.m.addConstr(self.ev_d[i] >= 0, name='ev_discharging_when_at_home')
-                # else:
-                #   self.m.addConstr(self.ev_c[i] <= 0, name='ev_charging_when_not_at_home')
-                #  self.m.addConstr(self.ev_d[i] <= 0, name='ev_discharging_when_not_at_home')
-
                 # ev: indicator constraints: battery can only be charged if ev is at home
                 self.m.addConstr((self.l_ev[j] == 1) >> (self.ev_c[j] >= 0), name=f'l_ev_{j} = 1 -> ev_c_{j} >= 0')
                 self.m.addConstr((self.l_ev[j] == 1) >> (self.ev_d[j] >= 0), name=f'l_ev_{j} = 1 -> ev_d_{j} >= 0')
@@ -203,10 +189,6 @@ class CommunityMember(mesa.Agent):
                     self.m.addConstr(
                         self.ev_soc[j] - self.ev_c[j] * self.ev_eta_c + self.ev_d[j] / self.ev_eta_d == self.ev_soc_t0 -
                         self.D_ev[j], name='ev_soc_update_0')
-                # elif i == t:
-                #  self.m.addConstr(
-                #  self.ev_soc[j] - self.ev_c[j] * self.ev_eta_c + self.ev_d[j] / self.ev_eta_d == self.ev_soc_t -
-                #  self.D_ev[i], name='ev_soc_update_0')
                 else:
                     self.m.addConstr(-self.ev_soc[j] + (self.ev_soc[j - 1] + self.ev_c[j] * self.ev_eta_c) - self.ev_d[
                         j] / self.ev_eta_d == self.D_ev[j], name=f'ev_soc_update_{j}')
@@ -313,7 +295,6 @@ class CommunityMember(mesa.Agent):
         self.ev_c_track, self.ev_d_track = res['ev_c'], res['ev_d']
         self.D_ev, self.ev_soc_t = res['D_ev'], res['ev_soc_t']
         self.D_bl, self.d_bl = res['D_bl'], res['d_bl']
-        # gp.disposeDefaultEnv() # TODO maybe remove (?)
 
         return
 
