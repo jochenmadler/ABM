@@ -98,24 +98,27 @@ def d_bl_consumer(model):
     return sum([a.d_bl for a in model.schedule.agents if not a.prosumer])
 
 
-def co2_all(model):
-    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
-    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents])
-
-
 def co2_prosumer(model):
-    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
-    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents if a.prosumer])
+    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
+    co2_pv_t = model.co2_factor_pv
+    return np.sum([(a.g_d_track*co2_mix_t + (a.n_d_track + a.pv_track)*co2_pv_t)
+                   - (a.g_s_track + a.n_s_track)*co2_pv_t for a in model.schedule.agents
+                   if a.prosumer])
 
 
 def co2_consumer(model):
-    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
-    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents if not a.prosumer])
+    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
+    co2_pv_t = model.co2_factor_pv
+    return np.sum([a.g_d_track*co2_mix_t + a.n_d_track*co2_pv_t for a in model.schedule.agents
+                   if not a.prosumer])
 
 
 def co2_gini(model):
-    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
-    x = np.array([a.g_d_track * co2e_t for a in model.schedule.agents])
+    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
+    co2_pv_t = model.co2_factor_pv
+    x = np.array([(a.g_d_track*co2_mix_t + (a.n_d_track + a.pv_track)*co2_pv_t) - (a.g_s_track + a.n_s_track)*co2_pv_t if a.prosumer 
+                  else a.g_d_track*co2_mix_t + a.n_d_track*co2_pv_t 
+                  for a in model.schedule.agents])
     diffsum = 0
     x = np.array([0 if i < 0 else i for i in x])
     for i, xi in enumerate(x[:-1], 1):
@@ -138,15 +141,18 @@ class EnergyCommunityModel(mesa.Model):
         self.G = self.database.network
         self.grid = mesa.space.NetworkGrid(self.G)
         self.schedule = mesa.time.RandomActivation(self)
-        self.internal_t = int(self.database.timetable[self.database.timetable.time == self.database.start_date].index[0])
+        self.internal_t = int(
+            self.database.timetable[self.database.timetable.time == self.database.start_date].index[0])
         self.time_index = self.update_time_index()
         self.p2p_trading = self.database.p2p_trading
-        self.nr_n_equilibrium_price_levels = int(self.database.optimization_parameter['nr_n_equilibrium_price_levels'])
+        self.nr_n_equilibrium_price_levels = int(
+            self.database.optimization_parameter['nr_n_equilibrium_price_levels'])
         self.n_price_levels, self.n_volumes = None, None
         self.n_d_price_t, self.n_s_price_t = None, None
         self.n_welfare = None
         self.n_max_trading_volume_t = None
         self.n_d_volume_t, self.n_s_volume_t = None, None
+        self.co2_factors_mix, self.co2_factor_pv = None, None
         self.running = True,
 
         # at each time step, collect data on model and agent level
@@ -172,7 +178,6 @@ class EnergyCommunityModel(mesa.Model):
                              'd_bl_all': d_bl_all,
                              'd_bl_prosumer': d_bl_prosumer,
                              'd_bl_consumer': d_bl_consumer,
-                             'gco2e_all': co2_all,
                              'gco2e_prosumer': co2_prosumer,
                              'gco2e_consumer': co2_consumer,
                              'co2e_gini': co2_gini,
@@ -207,7 +212,9 @@ class EnergyCommunityModel(mesa.Model):
                              'costs_t_ct': 'costs_t',
                              'costs_total_ct': 'costs_total'
                              })
-
+        # store gCO2/kWh information in model for faster datacollector calculation
+        self.co2_factors_mix = self.database.co2_factors_mix
+        self.co2_factor_pv = self.database.optimization_parameter['gco2e_pv']
         # apply optimization parameter relevant to all agents: PV capacity, home battery, and EV battery
         buildings = self.database.buildings
         pv_efficiency = self.database.optimization_parameter['pv_efficiency']
@@ -225,7 +232,8 @@ class EnergyCommunityModel(mesa.Model):
         buildings['EV_BATTERY_CAPACITY_MAX_kW'] = buildings['EV_BATTERY_CAPACITY_kW'] * ev_soc_max_pct
         buildings['EV_BATTERY_CAPACITY_MIN_kW'] = buildings['EV_BATTERY_CAPACITY_kW'] * ev_soc_min_pct
         # create agents and add them to model scheduler and network
-        centroids = np.column_stack((self.database.buildings.centroid.x, self.database.buildings.centroid.y))
+        centroids = np.column_stack(
+            (self.database.buildings.centroid.x, self.database.buildings.centroid.y))
         for i in range(len(buildings)):
             # obtain agent attributes
             data_i = buildings.loc[i].to_dict()
@@ -259,7 +267,8 @@ class EnergyCommunityModel(mesa.Model):
     def calculate_p2p_price_levels(self):
         price_g_d, price_g_s = self.schedule.agents[0].price_g_d, self.schedule.agents[0].price_g_s
         price_n_max = price_g_d * 0.99
-        price_n_min = (price_g_s + self.database.optimization_parameter['grid_fees']) * 1.01
+        price_n_min = (
+            price_g_s + self.database.optimization_parameter['grid_fees']) * 1.01
         n_price_levels = pd.DataFrame(
             np.linspace([price_n_min[i] if price_n_min[i] < price_n_max[i] else price_n_max[i] for i in
                          range(len(price_n_min))],
@@ -270,12 +279,14 @@ class EnergyCommunityModel(mesa.Model):
         return n_price_levels
 
     def run_optimization(self):
-        self.n_d_price_t, self.n_s_price_t = self.schedule.agents[0].price_g_d, self.schedule.agents[0].price_g_s
+        self.n_d_price_t, self.n_s_price_t = self.schedule.agents[
+            0].price_g_d, self.schedule.agents[0].price_g_s
         for a in self.schedule.agents:
             a.optimize_hems(0)
             a.store_hems_result(0)
         # set p2p price to grid price for tracking
-        self.n_d_price_t, self.n_s_price_t = self.schedule.agents[0].price_g_d, self.schedule.agents[0].price_g_s
+        self.n_d_price_t, self.n_s_price_t = self.schedule.agents[
+            0].price_g_d, self.schedule.agents[0].price_g_s
         return
 
     def run_p2p_optimization(self):
@@ -286,9 +297,11 @@ class EnergyCommunityModel(mesa.Model):
         for i in range(self.nr_n_equilibrium_price_levels):
             # set global p2p buying/selling price level
             self.n_d_price_t = self.n_price_levels.iloc[:, i]
-            self.n_s_price_t = self.n_d_price_t - self.database.optimization_parameter['grid_fees']
+            self.n_s_price_t = self.n_d_price_t - \
+                self.database.optimization_parameter['grid_fees']
             # run agents' optimization, track results, and cumulate p2p buying and selling volumes
-            a_n_d_volumes, a_n_s_volumes = np.zeros(len(self.time_index)), np.zeros(len(self.time_index))
+            a_n_d_volumes, a_n_s_volumes = np.zeros(
+                len(self.time_index)), np.zeros(len(self.time_index))
             for a in self.schedule.agents:
                 a_n_d, a_n_s = a.optimize_hems(i)
                 a_n_d_volumes = np.add(a_n_d_volumes, a_n_d)
@@ -301,10 +314,12 @@ class EnergyCommunityModel(mesa.Model):
         for a in self.schedule.agents:
             a.store_hems_result(max_n_index)
         # for current time step, obtain total p2p trading demand and supply, calculate p2p trading volume
-        self.n_d_volume_t, self.n_s_volume_t = self.n_volumes[max_n_index][0][0], self.n_volumes[max_n_index][1][0]
+        self.n_d_volume_t, self.n_s_volume_t = self.n_volumes[
+            max_n_index][0][0], self.n_volumes[max_n_index][1][0]
         self.n_max_trading_volume_t = min(self.n_d_volume_t, self.n_s_volume_t)
         self.n_d_price_t = self.n_price_levels.iloc[0, max_n_index]
-        self.n_s_price_t = self.n_d_price_t - self.database.optimization_parameter['grid_fees']
+        self.n_s_price_t = self.n_d_price_t - \
+            self.database.optimization_parameter['grid_fees']
 
         return
 

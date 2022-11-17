@@ -59,7 +59,7 @@ def setup_data(gdf, network,
     # read in co2e factor timeseries
     file_path = [i for i in os.listdir(co2_factor_dir) if f'{p_y}_qh_gCO2e_kWh.xlsx' in i][0]
     file = pd.read_excel(co2_factor_dir + file_path, index_col=0)
-    simulation_data['co2_emission_factors'] = file
+    simulation_data['co2_emission_factors_mix'] = file
     # hardcoded start dates for the seasons: January, March, June, and September
     if season == 'winter':
         start_date = pd.to_datetime(f'{p_y}-01-01 00:00:00')

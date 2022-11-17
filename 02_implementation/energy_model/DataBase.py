@@ -10,7 +10,7 @@ class DataBase():
         self.qh_pv_generation_factors = None
         self.timetable = None
         self.optimization_parameter = None
-        self.co2_factors = None
+        self.co2_factors_mix = None
         self.start_date = None
         self.p2p_trading = None
         self.simulation_parameter = simulation_data
@@ -62,9 +62,9 @@ class DataBase():
             raise Exception('ERROR: optimization parameter dict not part of simulation data')
         
         try:
-            self.co2_factors = simulation_data['co2_emission_factors']
+            self.co2_factors_mix = simulation_data['co2_emission_factors_mix']
         except:
-            raise Exception('ERROR: co2 emission factors not part of simulation data')
+            raise Exception('ERROR: co2 emission factors of mix not part of simulation data')
         
         try:
             self.start_date = simulation_data['start_date']
