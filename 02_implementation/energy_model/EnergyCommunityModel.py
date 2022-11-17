@@ -41,6 +41,7 @@ def costs_consumer(model):
 
 
 def costs_gini(model):
+    # according to: https://stackoverflow.com/a/61154922
     x = np.array([a.costs_total for a in model.schedule.agents])
     diffsum = 0
     x = np.array([0 if i < 0 else i for i in x])
@@ -97,6 +98,31 @@ def d_bl_consumer(model):
     return sum([a.d_bl for a in model.schedule.agents if not a.prosumer])
 
 
+def co2_all(model):
+    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
+    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents])
+
+
+def co2_prosumer(model):
+    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
+    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents if a.prosumer])
+
+
+def co2_consumer(model):
+    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
+    return np.sum([a.g_d_track * co2e_t for a in model.schedule.agents if not a.prosumer])
+
+
+def co2_gini(model):
+    co2e_t = model.database.co2_factors.iloc[model.time_index[0],-1]
+    x = np.array([a.g_d_track * co2e_t for a in model.schedule.agents])
+    diffsum = 0
+    x = np.array([0 if i < 0 else i for i in x])
+    for i, xi in enumerate(x[:-1], 1):
+        diffsum += np.sum(np.abs(xi - x[i:]))
+    return diffsum / (len(x) ** 2 * np.mean(x))
+
+
 def hb_soc_all(model):
     return sum([a.hb_soc_t for a in model.schedule.agents])
 
@@ -146,6 +172,10 @@ class EnergyCommunityModel(mesa.Model):
                              'd_bl_all': d_bl_all,
                              'd_bl_prosumer': d_bl_prosumer,
                              'd_bl_consumer': d_bl_consumer,
+                             'gco2e_all': co2_all,
+                             'gco2e_prosumer': co2_prosumer,
+                             'gco2e_consumer': co2_consumer,
+                             'co2e_gini': co2_gini,
                              'hb_soc_all': hb_soc_all,
                              'ev_soc_all': ev_soc_all},
             agent_reporters={'prosumer': 'prosumer',

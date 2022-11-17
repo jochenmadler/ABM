@@ -6,7 +6,6 @@ import warnings
 from datetime import datetime
 import os
 
-
 # get centroid coordinates for an address in the dataset
 def _0_get_address_coordinates(buildings_gdf, streetname, streetnr):
     if len(buildings_gdf[(buildings_gdf.STREET == streetname) & (buildings_gdf.NUMBER == streetnr)]) == 0:

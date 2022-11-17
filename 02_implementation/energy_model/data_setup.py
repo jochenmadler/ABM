@@ -31,6 +31,7 @@ def setup_data(gdf, network,
                electricity_price_dir,
                pv_generation_factors_path,
                optimization_parameter_path,
+               co2_factor_dir,
                prices_dynamic=True,
                prices_year=2019,
                season='winter',
@@ -45,10 +46,9 @@ def setup_data(gdf, network,
     # read in residential ev load profile timeseries
     simulation_data['qh_ev_load_profiles_kWh'] = pd.read_excel(residential_ev_load_profile_path).iloc[:, 1:]
     # read in electricity price timeseries
-    os.chdir(electricity_price_dir)
     p_y, p_d = str(prices_year), 'dynamic' if prices_dynamic else 'static'
-    file_path = [i for i in os.listdir() if f'{p_y}_{p_d}_qh_price_ct_kWh.xlsx' in i][0]
-    file = pd.read_excel(file_path)
+    file_path = [i for i in os.listdir(electricity_price_dir) if f'{p_y}_{p_d}_qh_price_ct_kWh.xlsx' in i][0]
+    file = pd.read_excel(electricity_price_dir + '\\' + file_path)
     simulation_data['timetable'] = file[['time']]
     simulation_data['qh_electricity_prices_ct_kWh'] = file.iloc[:, 1:]
     # read in pv generation factor timeseries
@@ -56,6 +56,10 @@ def setup_data(gdf, network,
     # read in manually filled optimization parameter .xlsx as dict
     parameter_df = pd.read_excel(optimization_parameter_path)
     simulation_data['optimization_parameter_dict'] = dict(zip(parameter_df.parameter, parameter_df.value))
+    # read in co2e factor timeseries
+    file_path = [i for i in os.listdir(co2_factor_dir) if f'{p_y}_qh_gCO2e_kWh.xlsx' in i][0]
+    file = pd.read_excel(co2_factor_dir + file_path, index_col=0)
+    simulation_data['co2_emission_factors'] = file
     # hardcoded start dates for the seasons: January, March, June, and September
     if season == 'winter':
         start_date = pd.to_datetime(f'{p_y}-01-01 00:00:00')
