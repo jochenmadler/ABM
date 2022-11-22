@@ -99,26 +99,16 @@ def d_bl_consumer(model):
 
 
 def co2_prosumer(model):
-    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
-    co2_pv_t = model.co2_factor_pv
-    return np.sum([(a.g_d_track*co2_mix_t + (a.n_d_track + a.pv_track)*co2_pv_t)
-                   - (a.g_s_track + a.n_s_track)*co2_pv_t for a in model.schedule.agents
-                   if a.prosumer])
+    return sum([a.co2e_t for a in model.schedule.agents if a.prosumer])
 
 
 def co2_consumer(model):
-    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
-    co2_pv_t = model.co2_factor_pv
-    return np.sum([a.g_d_track*co2_mix_t + a.n_d_track*co2_pv_t for a in model.schedule.agents
-                   if not a.prosumer])
+    return sum([a.co2e_t for a in model.schedule.agents if not a.prosumer])
 
 
 def co2_gini(model):
-    co2_mix_t = model.co2_factors_mix.iloc[model.time_index[0], -1]
-    co2_pv_t = model.co2_factor_pv
-    x = np.array([(a.g_d_track*co2_mix_t + (a.n_d_track + a.pv_track)*co2_pv_t) - (a.g_s_track + a.n_s_track)*co2_pv_t if a.prosumer 
-                  else a.g_d_track*co2_mix_t + a.n_d_track*co2_pv_t 
-                  for a in model.schedule.agents])
+    # according to: https://stackoverflow.com/a/61154922
+    x = np.array([a.co2e_total for a in model.schedule.agents])
     diffsum = 0
     x = np.array([0 if i < 0 else i for i in x])
     for i, xi in enumerate(x[:-1], 1):
@@ -132,6 +122,18 @@ def hb_soc_all(model):
 
 def ev_soc_all(model):
     return sum([a.ev_soc_t for a in model.schedule.agents])
+
+
+def mean_dcf_all(model):
+    return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents])
+
+
+def mean_dcf_prosumer(model):
+    return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents if a.prosumer])
+
+
+def mean_dcf_consumer(model):
+    return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents if not a.prosumer])
 
 
 class EnergyCommunityModel(mesa.Model):
@@ -182,7 +184,10 @@ class EnergyCommunityModel(mesa.Model):
                              'gco2e_consumer': co2_consumer,
                              'co2e_gini': co2_gini,
                              'hb_soc_all': hb_soc_all,
-                             'ev_soc_all': ev_soc_all},
+                             'ev_soc_all': ev_soc_all,
+                             'mean_dcf_all': mean_dcf_all,
+                             'mean_dcf_prosumer': mean_dcf_prosumer,
+                             'mean_dcf_consumer': mean_dcf_consumer},
             agent_reporters={'prosumer': 'prosumer',
                              'hh_type': 'residential_type',
                              'nr_evs': 'nr_evs',
@@ -210,11 +215,9 @@ class EnergyCommunityModel(mesa.Model):
                              'ev_d_kW': 'ev_d_track',
                              'ev_soc_kW': 'ev_soc_t',
                              'costs_t_ct': 'costs_t',
-                             'costs_total_ct': 'costs_total'
-                             })
-        # store gCO2/kWh information in model for faster datacollector calculation
-        self.co2_factors_mix = self.database.co2_factors_mix
-        self.co2_factor_pv = self.database.optimization_parameter['gco2e_pv']
+                             'costs_total_ct': 'costs_total',
+                             'gco2e_t': 'co2e_t',
+                             'gco2e_total': 'co2e_total'})
         # apply optimization parameter relevant to all agents: PV capacity, home battery, and EV battery
         buildings = self.database.buildings
         pv_efficiency = self.database.optimization_parameter['pv_efficiency']

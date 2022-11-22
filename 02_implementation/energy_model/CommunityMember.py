@@ -44,6 +44,7 @@ class CommunityMember(mesa.Agent):
         self.ev_c_track, self.ev_d_track, self.ev_c_binary_track, self.ev_d_binary_track, = None, None, None, None
         self.ev_soc_t, self.l_ev_track = None, None
         self.costs_t, self.costs_total = None, 0
+        self.co2e_t, self.co2e_total = None, 0
         # set model's optimization parameter
         self.variable_bounds = self.model.database.optimization_parameter['variable_bound']
         self.big_M = self.model.database.optimization_parameter['big_M']
@@ -251,11 +252,12 @@ class CommunityMember(mesa.Agent):
         res['ev_soc_t'] = [i.X for i in self.m.getVars() if 'ev_soc_t[' in i.VarName][0]
         res['d_bl'] = res['g_d'] - res['g_s'] + res['n_d'] - res['n_s'] + res['pv'] - res[
             'hb_c'] + res['hb_d'] - res['ev_c'] + res['ev_d']
-        res['costs_t'] = res['price_g_d'] * res['g_d'] - res['price_g_s'] * res['g_s'] + res['price_n_d'] * res['n_d'] - \
+        # TODO: remove costs_t, because its calculated later, anyways
+        '''res['costs_t'] = res['price_g_d'] * res['g_d'] - res['price_g_s'] * res['g_s'] + res['price_n_d'] * res['n_d'] - \
                          res['price_n_s'] * res['n_s'] + self.lcoe_pv * res['pv'] + \
                          self.lcoe_hb * res['hb_c'] + self.lcoe_hb * res['hb_d'] + \
-                         self.lcoe_ev * res['ev_c'] + self.lcoe_ev * res['ev_d']
-
+                         self.lcoe_ev * res['ev_c'] + self.lcoe_ev * res['ev_d']'''
+        
         return res
 
     # obtain p2p trading price from model, run optimization, store result
@@ -314,5 +316,15 @@ class CommunityMember(mesa.Agent):
                        self.lcoe_hb * self.hb_d_track + self.lcoe_hb * self.hb_c_track + \
                        self.lcoe_ev * self.ev_d_track + self.lcoe_ev * self.ev_c_track
         self.costs_total += self.costs_t
+        # calculate agent's co2e_t, add to its co2e_total
+        co2e_mix_t = self.model.database.co2_factors_mix.iloc[self.model.time_index[0], -1]
+        co2e_pv_t = self.model.database.optimization_parameter['gco2e_pv']
+        if self.prosumer:
+            self.co2e_t = (self.g_d_track*co2e_mix_t + (self.n_d_track + self.pv_track)*co2e_pv_t) 
+            - ((self.g_s_track+self.n_s_track)*co2e_pv_t)
+            self.co2e_t = 0 if self.co2e_t < 0 else self.co2e_t
+        else:
+            self.co2e_t = self.g_d_track*co2e_mix_t + self.n_d_track*co2e_pv_t
+        self.co2e_total += self.co2e_t
 
         return

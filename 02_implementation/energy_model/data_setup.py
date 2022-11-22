@@ -62,15 +62,15 @@ def setup_data(gdf, network,
     simulation_data['co2_emission_factors_mix'] = file
     # hardcoded start dates for the seasons: January, March, June, and September
     if season == 'winter':
-        start_date = pd.to_datetime(f'{p_y}-01-01 00:00:00')
+        start_date = pd.to_datetime(f'{p_y}-01-15 00:00:00')
     elif season == 'spring':
-        start_date = pd.to_datetime(f'{p_y}-03-01 00:00:00')
+        start_date = pd.to_datetime(f'{p_y}-03-15 00:00:00')
     elif season == 'summer':
-        start_date = pd.to_datetime(f'{p_y}-06-01 00:00:00')
+        start_date = pd.to_datetime(f'{p_y}-06-15 00:00:00')
     elif season == 'fall' or season == 'autumn':
-        start_date = pd.to_datetime(f'{p_y}-09-01 00:00:00')
+        start_date = pd.to_datetime(f'{p_y}-09-15 00:00:00')
     else:
-        raise Exception('no valid season. Please try one of [winter, spring, summer, fall].')
+        raise Exception(f'{season} is no valid season. Please try one of [winter, spring, summer, fall].')
     simulation_data['start_date'] = start_date
     simulation_data['p2p_trading'] = p2p_trading
 

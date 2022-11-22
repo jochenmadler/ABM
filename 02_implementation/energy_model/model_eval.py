@@ -6,26 +6,35 @@ import matplotlib.pyplot as plt
 import pickle
 
 
+def create_model(paths, input_cdir_timestamp, pr_dynamic=None, pr_year=None, season=None, p2p_trading=None, scenario_t=None):
+    if scenario_t is not None:
+        pr_dynamic, pr_year = scenario_t['pr_dynamic_options'][0], scenario_t['pr_years'][0]
+        season, p2p_trading = scenario_t['seasons'][0], scenario_t['p2p_options'][0]
+    else:
+        pr_dynamic, pr_year, season, p2p_trading = pr_dynamic, pr_year, season, p2p_trading
+    network, gdf = load_network(paths['custom_communities_dir'], input_cdir_timestamp)
+    simulation_data = setup_data(gdf, network,
+                        paths['residential_load_profile_path'],
+                        paths['residential_ev_load_profile_path'],
+                        paths['electricity_price_dir'],
+                        paths['pv_generation_factors_path'],
+                        paths['optimization_parameter_path'],
+                        paths['co2_emissions_factor_dir'],
+                        prices_dynamic=pr_dynamic,
+                        prices_year=pr_year,
+                        season=season,
+                        p2p_trading=p2p_trading)
+    model = EnergyCommunityModel(simulation_data)
+    
+    return model
+
+
 def single_runner(paths, input_cdir_timestamp, output_dir_timestamp, n_steps, pr_dynamic, pr_year, season, p2p_trading):
     start_timer = datetime.now().replace(microsecond=0)
-    # network: load existing network (energy community)
-    network, gdf = load_network(paths['custom_communities_dir'], input_cdir_timestamp)
-    # data: read in time series data relevant to the scenario
-    simulation_data = setup_data(gdf, network,
-                         paths['residential_load_profile_path'],
-                         paths['residential_ev_load_profile_path'],
-                         paths['electricity_price_dir'],
-                         paths['pv_generation_factors_path'],
-                         paths['optimization_parameter_path'],
-                         paths['co2_emissions_factor_dir'],
-                         prices_dynamic=pr_dynamic,
-                         prices_year=pr_year,
-                         season=season,
-                         p2p_trading=p2p_trading)
-    # 
+    # load existing network (community), read in relevant time series data and create model
+    model = create_model(paths, input_cdir_timestamp, pr_dynamic, pr_year, season, p2p_trading)
     f_name = f'{output_dir_timestamp}_mdf,adf_season_{season}_p2p_{str(p2p_trading)}_year_{str(pr_year)}_dyn_{str(pr_dynamic)}'
-    # create and run model
-    model = EnergyCommunityModel(simulation_data)
+    # run model for n_steps
     for i in range(n_steps):
         model.step()
         print(f'--- {f_name}: Step {i}/{n_steps} done ---')
@@ -165,7 +174,7 @@ def export_measure_calculation(paths, m_dict):
     return
 
 
-def plot_mdf(mdf, sc, year, season, measure = None, ax = None):
+def plot_mdf(mdf, year, season, measure = None, ax = None):
     if ax is None:
         ax = plt.gca()
     l_1, l_2, l_3 = None, None, None
@@ -175,7 +184,7 @@ def plot_mdf(mdf, sc, year, season, measure = None, ax = None):
         ax.set_ylabel('€ct')
         ax2 = ax.twinx()
         ax2.set_ylim(0,1)
-        l_3 = ax2.plot(mdf['costs_gini'], label='gini coefficient', color='black', linestyle='--')
+        l_3 = ax2.plot(mdf['costs_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
         ax2.set_ylabel('cost gini coeff.')
     elif 'stability' in measure.lower():
         delta_g = mdf['g_d_all'] - mdf['g_s_all']
@@ -183,19 +192,18 @@ def plot_mdf(mdf, sc, year, season, measure = None, ax = None):
         l_1 = ax.plot(delta_g, label = 'net grid demand', color='blue')
         ax.set_ylabel('kWh')
         ax2 = ax.twinx()
-        l_2 = ax2.plot(autarky, label = 'autarky level', color='black', linestyle='--')
+        l_2 = ax2.plot(autarky, label = 'autarky level', color='black', linestyle='--', linewidth=.5)
         ax2.set_ylim(0,1)
         ax2.set_ylabel('autarky level')
     elif 'sustainability' in measure.lower():
-        l_1 = ax.plot(mdf['gco2e_prosumer'], label = 'prosumer', color='green')
+        l_1 = ax.plot(mdf['gco2e_prosumer'].apply(lambda x: 0 if x < 0 else x), label = 'prosumer', color='green')
         l_2 = ax.plot(mdf['gco2e_consumer'], label = 'consumer', color='blue')
         ax.set_ylabel('gCO2e')
-        ax2 = ax.twinx()
-        ax2.set_ylim(0,1)
-        l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--')
-        ax2.set_ylabel('CO2e gini coeff.')
-    else:
-        return
+        #ax2 = ax.twinx()
+        #ax2.set_ylim(0,1)
+        #l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
+        #ax2.set_ylabel('CO2e gini coeff.')
+    else: return
     # subplot title and combined legend
     ax.set_title(f'{year}, {season}')
     lns = l_1+l_2
@@ -240,9 +248,10 @@ def plot_all_scenarios(paths, date, scenario_dict, measure = None):
         for year in years:
             for season in seasons:
                 mdf = get_mdf(data_dict_sc, year, season)
-                plot_mdf(mdf, year=year, sc=sc, season=season, measure = measure, ax = ax[row][col])
+                plot_mdf(mdf, year=year, season=season, measure = measure, ax = ax[row][col])
                 row += 1
     # ax = annotate_rows_and_cols(ax) -> optional
+    fig.autofmt_xdate()
     plt.tight_layout()
 
     return fig, ax
