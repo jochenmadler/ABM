@@ -120,20 +120,44 @@ def hb_soc_all(model):
     return sum([a.hb_soc_t for a in model.schedule.agents])
 
 
+def hb_c_all(model):
+    return sum([a.hb_c_track for a in model.schedule.agents])
+
+
+def hb_d_all(model):
+    return sum([a.hb_d_track for a in model.schedule.agents])
+
+
 def ev_soc_all(model):
     return sum([a.ev_soc_t for a in model.schedule.agents])
 
 
-def mean_dcf_all(model):
+def ev_c_all(model):
+    return sum([a.ev_c_track for a in model.schedule.agents])
+
+
+def ev_d_all(model):
+    return sum([a.ev_d_track for a in model.schedule.agents])
+
+
+def mean_dci_all(model):
     return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents])
 
 
-def mean_dcf_prosumer(model):
+def mean_dci_prosumer(model):
     return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents if a.prosumer])
 
 
-def mean_dcf_consumer(model):
+def mean_dci_consumer(model):
     return np.mean([abs(a.d_bl/a.D_bl -1)/a.bl_flexibility for a in model.schedule.agents if not a.prosumer])
+
+
+def mean_n_d_share(model):
+    return np.mean([a.n_d_share_tracker[-1] for a in model.schedule.agents])
+
+
+def mean_n_s_share(model):
+    return np.mean([a.n_s_share_tracker[-1] for a in model.schedule.agents if a.prosumer])
 
 
 class EnergyCommunityModel(mesa.Model):
@@ -184,10 +208,17 @@ class EnergyCommunityModel(mesa.Model):
                              'gco2e_consumer': co2_consumer,
                              'co2e_gini': co2_gini,
                              'hb_soc_all': hb_soc_all,
+                             'hb_c_all': hb_c_all,
+                             'hb_d_all': hb_d_all,
                              'ev_soc_all': ev_soc_all,
-                             'mean_dcf_all': mean_dcf_all,
-                             'mean_dcf_prosumer': mean_dcf_prosumer,
-                             'mean_dcf_consumer': mean_dcf_consumer},
+                             'ev_c_all': ev_c_all,
+                             'ev_d_all': ev_d_all,
+                             'mean_dci_all': mean_dci_all,
+                             'mean_dci_prosumer': mean_dci_prosumer,
+                             'mean_dci_consumer': mean_dci_consumer,
+                             'mean_n_d_share': mean_n_d_share,
+                             'mean_n_s_share': mean_n_s_share
+                             },
             agent_reporters={'prosumer': 'prosumer',
                              'hh_type': 'residential_type',
                              'nr_evs': 'nr_evs',
@@ -341,7 +372,7 @@ class EnergyCommunityModel(mesa.Model):
         # collect data for model and agents, advance time_index by one
         self.datacollector.collect(self)
         self.time_index = self.update_time_index()
-
+        
         return
 
     def run_model(self, n):

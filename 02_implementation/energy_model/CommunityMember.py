@@ -3,6 +3,7 @@ import gurobipy as gp
 import numpy as np
 import pandas as pd
 from gurobipy import GRB
+from collections import deque
 
 
 class CommunityMember(mesa.Agent):
@@ -42,6 +43,8 @@ class CommunityMember(mesa.Agent):
         self.hb_c_track, self.hb_d_track, self.hb_c_binary_track, self.hb_d_binary_track = None, None, None, None
         self.hb_soc_t = None
         self.ev_c_track, self.ev_d_track, self.ev_c_binary_track, self.ev_d_binary_track, = None, None, None, None
+        self.n_d_share_tracker = deque([1] * int(self.model.database.optimization_parameter['optimization_steps']) * 2)
+        self.n_s_share_tracker = deque([1] * int(self.model.database.optimization_parameter['optimization_steps']) * 2)
         self.ev_soc_t, self.l_ev_track = None, None
         self.costs_t, self.costs_total = None, 0
         self.co2e_t, self.co2e_total = None, 0
@@ -105,12 +108,12 @@ class CommunityMember(mesa.Agent):
         self.hb_d = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='hb_d', lb=0, ub=self.hb_d_max)
         self.hb_c_binary = self.m.addVars(rti, vtype=GRB.BINARY, name='hb_c_bin')
         self.hb_d_binary = self.m.addVars(rti, vtype=GRB.BINARY, name='hb_d_bin')
-        self.hb_soc = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='hb_soc_t', lb=self.hb_soc_min, ub=self.hb_soc_max)
+        self.hb_soc = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='hb_soc_t', lb=min(self.hb_soc_min, self.hb_soc_t0), ub=max(self.hb_soc_max, self.hb_soc_t0))
         self.ev_c = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='ev_c', lb=0, ub=self.ev_c_max)
         self.ev_d = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='ev_d', lb=0, ub=self.ev_d_max)
         self.ev_c_binary = self.m.addVars(rti, vtype=GRB.BINARY, name='ev_c_bin')
         self.ev_d_binary = self.m.addVars(rti, vtype=GRB.BINARY, name='ev_d_bin')
-        self.ev_soc = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='ev_soc_t', lb=self.ev_soc_min, ub=self.ev_soc_max)
+        self.ev_soc = self.m.addVars(rti, vtype=GRB.CONTINUOUS, name='ev_soc_t', lb=min(self.ev_soc_min, self.ev_soc_t0), ub=max(self.ev_soc_max, self.ev_soc_t0))
         self.l_ev = self.m.addVars(rti, vtype=GRB.BINARY, name='l_ev')
         # constraints
         for j in rti:
@@ -177,13 +180,11 @@ class CommunityMember(mesa.Agent):
                 # ev: can only be charged if ev is at home: if L_ev == 0 -> l_ev = 0, else 1
                 self.m.addConstr(self.l_ev[j] <= int(self.L_ev[j]), name=f'l_ev_{j}_f')
                 self.m.addConstr(self.l_ev[j] * self.big_M >= int(self.L_ev[j]), name=f'l_ev_{j}_t')
-
                 # ev: indicator constraints: battery can only be charged if ev is at home
                 self.m.addConstr((self.l_ev[j] == 1) >> (self.ev_c[j] >= 0), name=f'l_ev_{j} = 1 -> ev_c_{j} >= 0')
                 self.m.addConstr((self.l_ev[j] == 1) >> (self.ev_d[j] >= 0), name=f'l_ev_{j} = 1 -> ev_d_{j} >= 0')
-                self.m.addConstr((self.l_ev[j] == 0) >> (self.ev_c[j] <= 0), name=f'l_ev_{j} = 0 -> ev_c_{j} <= 0')
+                self.m.addConstr((self.l_ev[j] == 0) >> (self.ev_c[j] <= 0), name=f'l_ev_{j} = 0 -> ev_c_{j} <= 0') 
                 self.m.addConstr((self.l_ev[j] == 0) >> (self.ev_d[j] <= 0), name=f'l_ev_{j} = 0 -> ev_d_{j} <= 0')
-
                 # ev: battery state update must consider efficiency losses and consumption
                 if j < 1:
                     self.m.addConstr(
@@ -264,9 +265,11 @@ class CommunityMember(mesa.Agent):
     def optimize_hems(self, current_p2p_price_level_nr):
         rti = list(range(len(self.model.time_index)))
         self.price_n_d, self.price_n_s = self.model.n_d_price_t, self.model.n_s_price_t
+        # consider uncertainty by taking the average of past p2p energy bought/sold for future p2p energy bought/sold
+        n_d_prospective_share, n_s_prospective_share = np.mean(list(self.n_d_share_tracker)), np.mean(list(self.n_s_share_tracker))
         self.m.setObjective(gp.quicksum(
-            self.price_g_d[i] * self.g_d[i] - self.price_g_s[i] * self.g_s[i] + self.price_n_d[i] * self.n_d[i] -
-            self.price_n_s[i] * self.n_s[i] + self.lcoe_pv * self.pv[i] + self.lcoe_hb * self.hb_c[i] + self.lcoe_hb *
+            self.price_g_d[i] * self.g_d[i] - self.price_g_s[i] * self.g_s[i] + self.price_n_d[i] * (n_d_prospective_share * self.n_d[i]) -
+            self.price_n_s[i] * (n_s_prospective_share * self.n_s[i]) + self.lcoe_pv * self.pv[i] + self.lcoe_hb * self.hb_c[i] + self.lcoe_hb *
             self.hb_d[i] + self.lcoe_ev * self.ev_c[i] + self.lcoe_ev * self.ev_d[i] for i in rti),
             GRB.MINIMIZE)
         self.m.optimize()
@@ -303,13 +306,23 @@ class CommunityMember(mesa.Agent):
         if self.model.p2p_trading:
             # market clearing: considering p2p max trading volume, update agent's trading quantities
             self.price_n_d, self.price_n_s = self.model.n_d_price_t, self.model.n_s_price_t
+            # determine agent's share of community's p2p energy bought/sold
             a_share_n_d = self.n_d_track / self.model.n_d_volume_t if self.model.n_d_volume_t > 0 else 0
             a_share_n_s = self.n_s_track / self.model.n_s_volume_t if self.model.n_s_volume_t > 0 else 0
             a_d_t, a_s_t = self.g_d_track + self.n_d_track, self.g_s_track + self.n_s_track
+            # store energy traded with p2p before market clearing
+            self.n_d_track_old, self.n_s_track_old = self.n_d_track, self.n_s_track
+            # update agent's p2p energy bought/sold according to share of community's p2p energy bought/sold
             self.n_d_track = a_share_n_d * self.model.n_max_trading_volume_t
             self.n_s_track = a_share_n_s * self.model.n_max_trading_volume_t
-            # update agent's energy balance according to new p2p trading quantities
+            # update agent's grid energy bought/sold according to new p2p trading quantities
             self.g_d_track, self.g_s_track = a_d_t - self.n_d_track, a_s_t - self.n_s_track
+            # track share of optimal vs. actual p2p energy bought/sold for future assessment during optimization in a rolling queue
+            n_d_share_track_t = self.n_d_track / self.n_d_track_old if self.n_d_track_old > 0 else 0
+            n_s_share_track_t = self.n_s_track / self.n_s_track_old if self.n_s_track_old > 0 else 0
+            self.n_d_share_tracker.append(n_d_share_track_t), self.n_s_share_tracker.append(n_s_share_track_t)
+            self.n_d_share_tracker.popleft()
+            self.n_s_share_tracker.popleft()
         # update agent's costs according to new p2p trading quantities
         self.costs_t = self.price_g_d * self.g_d_track + self.price_n_d * self.n_d_track - self.price_g_s * self.g_s_track - \
                        self.price_n_s * self.n_s_track + self.lcoe_pv * self.pv_track + \

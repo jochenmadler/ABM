@@ -30,14 +30,17 @@ def create_model(paths, input_cdir_timestamp, pr_dynamic=None, pr_year=None, sea
 
 
 def single_runner(paths, input_cdir_timestamp, output_dir_timestamp, n_steps, pr_dynamic, pr_year, season, p2p_trading):
-    start_timer = datetime.now().replace(microsecond=0)
+    s1_timer = datetime.now().replace(microsecond=0)
     # load existing network (community), read in relevant time series data and create model
     model = create_model(paths, input_cdir_timestamp, pr_dynamic, pr_year, season, p2p_trading)
     f_name = f'{output_dir_timestamp}_mdf,adf_season_{season}_p2p_{str(p2p_trading)}_year_{str(pr_year)}_dyn_{str(pr_dynamic)}'
     # run model for n_steps
+    print(f'--- START: {f_name}')
     for i in range(n_steps):
+        s2_timer = datetime.now().replace(microsecond=0)
         model.step()
-        print(f'--- {f_name}: Step {i}/{n_steps} done ---')
+        e2_timer = datetime.now().replace(microsecond=0)
+        print(f'--- Step {i}/{n_steps} done. Time: {e2_timer - s2_timer} ---')
     # get results
     mdf, adf = model.datacollector.get_model_vars_dataframe(), model.datacollector.get_agent_vars_dataframe()
     # write to pickle file
@@ -46,8 +49,8 @@ def single_runner(paths, input_cdir_timestamp, output_dir_timestamp, n_steps, pr
         pickle.dump([mdf, adf], handle, protocol=pickle.HIGHEST_PROTOCOL)
     os.chdir(paths['home_path'])
     # print success message
-    end_timer = datetime.now().replace(microsecond=0)
-    print(f'--- SUCCESS: {f_name} stored. Total simulation time: {end_timer - start_timer} ---')
+    e1_timer = datetime.now().replace(microsecond=0)
+    print(f'--- SUCCESS: {f_name} stored. Total simulation time: {e1_timer - s1_timer} ---')
     
     return
 
@@ -69,6 +72,20 @@ def batch_runner(paths, sc_dict, n_steps, input_cdir_timestamp, output_dir_times
                     single_runner(paths, input_cdir_timestamp, output_dir_timestamp, n_steps,pr_dynamic,pr_year,season,p2p_trading)
                     
     return
+
+
+def measure_validity_check(measure):
+    if measure not in ['welfare', 'stability', 'sustainability']:
+        raise Exception(f'ERROR: {measure} not in [welfare, stability, sustainability].')
+    
+    return None
+
+
+def season_validity_check(season):
+    if season not in ['winter', 'spring', 'summer', 'fall']:
+        raise Exception(f'ERROR: {season} not in [winter, spring, summer, fall.')
+    
+    return None
 
 
 def get_output_dfs(paths, date, scenario_dict_sc):
@@ -105,41 +122,80 @@ def get_mdf(data_dict_sc, year, season, adf_too=False):
     # returns time-indexed mdf for certain scenario, year, and season
     f_name = [i for i in list(data_dict_sc.keys()) if str(year) in i if season in i][0]
     mdf, adf = data_dict_sc[f_name][0], data_dict_sc[f_name][1]
-    start_date = pd.to_datetime(f'{year}-01-01 00:00') if 'winter' in season else pd.to_datetime(f'{year}-06-01 00:00')
+    season_validity_check(season)
+    if season == 'winter':
+        start_date = pd.to_datetime(f'{year}-01-15 00:00')
+    elif season == 'spring':
+        start_date = pd.to_datetime(f'{year}-03-15 00:00')
+    elif season == 'summer':
+        start_date = pd.to_datetime(f'{year}-06-15 00:00')
+    else:
+        start_date = pd.to_datetime(f'{year}-09-15 00:00')
     mdf.index = pd.date_range(start_date, freq='15T', periods=len(mdf))
     if adf_too:
+        
         return [mdf, adf]
     else:
         return mdf
+    
+
+def get_quick_mdf(paths, date, scenario_dict_sc, adf_too = False):
+    data_dict_sc, seasons, years, p2p_bool, pr_bool = get_data_and_scenario_info(paths, date, scenario_dict_sc)
+    if adf_too:
+        return get_mdf(data_dict_sc, years[0], seasons[0], adf_too = adf_too)
+    else:
+        return get_mdf(data_dict_sc, years[0], seasons[0])
 
 
-def calculate_welfare_measures(mdf):
+def calculate_welfare_measures(mdf, specifics = False):
     df = mdf[['costs_all', 'costs_prosumer', 'costs_consumer', 'costs_gini']].describe()
     tot_costs_all = mdf['costs_all'].sum(axis=0)
     tot_costs_prosumer = mdf['costs_prosumer'].sum(axis=0)
     tot_costs_consumer = mdf['costs_consumer'].sum(axis=0)
     df.loc['sum'] = [tot_costs_all, tot_costs_prosumer, tot_costs_consumer, 0]
-    df.drop(['min', '25%', '50%', '75%'], axis=0, inplace=True)
+    df.drop(['25%', '50%', '75%'], axis=0, inplace=True)
+    if not specifics:
+        return df.round(2)
+    else:
+        return {'total_costs_all': df['costs_all']['sum'],
+                'total_costs_prosumer': df['costs_prosumer']['sum'],
+                'total_costs_consumer': df['costs_consumer']['sum'],
+                'mean_gini': df['costs_gini']['mean']}
 
-    return df
-
-
-def calculate_stability_measures(mdf):
+def calculate_stability_measures(mdf, specifics = False):
     net_g_d = pd.DataFrame(columns=['net_grid_demand'], data=mdf['g_d_all'] - mdf['g_s_all'])
     autarky = pd.DataFrame(columns=['autarky_level'], data=1 - (mdf['g_d_all'] - mdf['g_s_all']) / mdf['d_bl_all'])
     net_g_d_sum = net_g_d.net_grid_demand.sum(axis=0)
     df = pd.concat([net_g_d, autarky], axis=1).describe()
     df.loc['sum'] = [net_g_d_sum, 0]
     df.drop(['min', '25%', '50%', '75%'], axis=0, inplace=True)
+    if not specifics:
+        return df.round(2)
+    else:
+        return {'total_net_grid_demand': df['net_grid_demand']['sum'],
+                'mean_net_grid_demand': df['net_grid_demand']['mean'],
+                'std_net_grid_demand': df['net_grid_demand']['std'],
+                'times_crit_peak_demand': 0} # TODO: define times_crit_peak_demand
 
-    return df
+
+def calculate_sustainability_measures(mdf, specifics = False): 
+    mdf['gco2e_all'] = mdf['gco2e_consumer'] + mdf['gco2e_prosumer']
+    df = mdf[['gco2e_all', 'gco2e_prosumer', 'gco2e_consumer', 'co2e_gini']].describe()
+    total_co2e_all = mdf['gco2e_all'].sum(axis=0)
+    total_co2e_prosumer = mdf['gco2e_prosumer'].sum(axis=0)
+    total_co2e_consumer = mdf['gco2e_consumer'].sum(axis=0)
+    df.loc['sum'] = [total_co2e_all, total_co2e_prosumer, total_co2e_consumer, 0]
+    df.drop(['25%', '50%', '75%'], axis=0, inplace=True)
+    if not specifics:
+        return df.round(2)
+    else:
+        return {'total kgCO2e_all': df['gco2e_all']['sum'] / 1000,
+                'total_kgCO2e_prosumer': df['gco2e_prosumer']['sum'] / 1000,
+                'total_kgCO2e_consumer': df['gco2e_consumer']['sum'] / 1000,
+                'mean_CO2e_gini': df['co2e_gini']['mean']}
 
 
-def calculate_sustainability_measures(mdf): pass
-    # TODO: implement metrics
-
-
-def calculate_measure(paths, date, scenario_dict, measure):
+def calculate_measure(paths, date, scenario_dict, measure, to_df = False):
     data_dict, seasons, years, p2p_bool, pr_bool = get_data_and_scenario_info(paths, date, scenario_dict)
     dict_out = dict()
     sc_name = f'{measure}_scenario_{pr_bool} prices and {p2p_bool} P2P trading'
@@ -158,8 +214,38 @@ def calculate_measure(paths, date, scenario_dict, measure):
                 dict_out[sc_name][y][s] = calculate_sustainability_measures(mdf)
             else:
                 dict_out[sc_name][y][s] = None
+    # if only one scenario (instead of scenario_dict), return df
+    if to_df and len(years) == 1 and len(seasons) == 1:
+        return dict_out[sc_name][years[0]][seasons[0]]
+    else: 
+        return dict_out
 
-    return dict_out
+
+def get_quick_measure_kpis(paths, date_t, scenarios, measure):
+    # create empty df with custom cols
+    measure_validity_check(measure)
+    if measure == 'welfare':
+        cols = ['total_costs_all', 'total_costs_prosumer', 'total_costs_consumer', 'mean_gini']
+    elif measure == 'stability':
+        cols = ['total_net_grid_demand', 'mean_net_grid_demand', 'std_net_grid_demand', 'times_crit_peak_demand']
+    else:
+        cols = ['total kgCO2e_all', 'total_kgCO2e_prosumer', 'total_kgCO2e_consumer', 'mean_CO2e_gini']
+    df = pd.DataFrame(columns=cols)
+    # go through each scenario in scenario_dict_list and insert metrics as new row
+    for i in range(len(scenarios)):
+        sc = scenarios[i]
+        mdf_sc = get_quick_mdf(paths, date_t, sc)
+        year, season = sc['pr_years'][0], sc['seasons'][0]
+        ind = f'sc{i}: {year}, {season}'
+        if measure == 'welfare':
+            df.loc[ind] = calculate_welfare_measures(mdf_sc, specifics=True)
+        elif measure == 'stability':
+            df.loc[ind] = calculate_stability_measures(mdf_sc, specifics = True)
+        else:
+            df.loc[ind] = calculate_sustainability_measures(mdf_sc, specifics = True)
+    
+    return df.T
+
 
 
 def export_measure_calculation(paths, m_dict):
@@ -174,7 +260,7 @@ def export_measure_calculation(paths, m_dict):
     return
 
 
-def plot_mdf(mdf, year, season, measure = None, ax = None):
+def plot_mdf(mdf, measure = None, ax = None):
     if ax is None:
         ax = plt.gca()
     l_1, l_2, l_3 = None, None, None
@@ -188,27 +274,28 @@ def plot_mdf(mdf, year, season, measure = None, ax = None):
         ax2.set_ylabel('cost gini coeff.')
     elif 'stability' in measure.lower():
         delta_g = mdf['g_d_all'] - mdf['g_s_all']
-        autarky = 1 - (mdf['g_d_all'] - mdf['g_s_all']) / mdf['d_bl_all']
         l_1 = ax.plot(delta_g, label = 'net grid demand', color='blue')
         ax.set_ylabel('kWh')
-        ax2 = ax.twinx()
-        l_2 = ax2.plot(autarky, label = 'autarky level', color='black', linestyle='--', linewidth=.5)
-        ax2.set_ylim(0,1)
-        ax2.set_ylabel('autarky level')
     elif 'sustainability' in measure.lower():
         l_1 = ax.plot(mdf['gco2e_prosumer'].apply(lambda x: 0 if x < 0 else x), label = 'prosumer', color='green')
         l_2 = ax.plot(mdf['gco2e_consumer'], label = 'consumer', color='blue')
         ax.set_ylabel('gCO2e')
-        #ax2 = ax.twinx()
-        #ax2.set_ylim(0,1)
-        #l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
-        #ax2.set_ylabel('CO2e gini coeff.')
+        ax2 = ax.twinx()
+        ax2.set_ylim(0,1)
+        l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
+        ax2.set_ylabel('CO2e gini coeff.')
     else: return
     # subplot title and combined legend
-    ax.set_title(f'{year}, {season}')
-    lns = l_1+l_2
-    if l_3 is not None:
-        lns += l_3
+    year, month = mdf.index.year[0], mdf.index.month[0]
+    if month in [11,12,1]: season = 'winter'
+    elif month in [2,3,4]: season = 'spring'
+    elif month in [5,6,7]: season = 'summer'
+    elif month in [8,9,10]: season = 'fall'
+    else: season = 'invalid season'
+    ax.set_title(f'{mdf.index.year[0]}, {season}')
+    lns = l_1
+    if l_2 is not None: lns += l_2
+    if l_3 is not None: lns += l_3
     labs = [l.get_label() for l in lns if l is not None]
     ax.legend(lns, labs, loc = 0)
     
@@ -228,8 +315,7 @@ def annotate_rows_and_cols(ax):
 
 
 def plot_all_scenarios(paths, date, scenario_dict, measure = None):
-    if measure not in ['welfare', 'stability', 'sustainability']:
-        raise Exception('ERROR: please select measure in [welfare, stability, sustainability].')
+    measure_validity_check(measure)
     scenario_info_dict = dict()
     years_max, seasons_max = 0,0
     # read in basic info for every scenario
@@ -248,10 +334,23 @@ def plot_all_scenarios(paths, date, scenario_dict, measure = None):
         for year in years:
             for season in seasons:
                 mdf = get_mdf(data_dict_sc, year, season)
-                plot_mdf(mdf, year=year, season=season, measure = measure, ax = ax[row][col])
+                plot_mdf(mdf, measure = measure, ax = ax[row][col])
                 row += 1
     # ax = annotate_rows_and_cols(ax) -> optional
     fig.autofmt_xdate()
     plt.tight_layout()
 
     return fig, ax
+
+
+def plot_three_scenarios(paths, date, scenarios, measure):
+    if type(scenarios) != list or len(scenarios) != 3:
+        raise Exception(f'ERROR: {scenarios} must be a list of three scenarios.')
+    fig, ax = plt.subplots(figsize = (18,5), ncols=len(scenarios))  
+    for i in range(len(scenarios)):
+        mdf_sc = get_quick_mdf(paths, date, scenario_dict_sc=scenarios[i])
+        l1 = plot_mdf(mdf_sc, measure=measure, ax = ax[i])
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    
+    return fig
