@@ -38,9 +38,9 @@ def single_runner(paths, input_cdir_timestamp, output_dir_timestamp, n_steps, pr
     print(f'--- START: {f_name}')
     for i in range(n_steps):
         s2_timer = datetime.now().replace(microsecond=0)
-        model.step()
+        n_d, n_s = model.step()
         e2_timer = datetime.now().replace(microsecond=0)
-        print(f'--- Step {i}/{n_steps} done. Time: {e2_timer - s2_timer} ---')
+        print(f'--- Step {i}/{n_steps} done. Time: {e2_timer - s2_timer}. mean(n_d_share): {n_d}, mean(n_s_share): {n_s} ---')
     # get results
     mdf, adf = model.datacollector.get_model_vars_dataframe(), model.datacollector.get_agent_vars_dataframe()
     # write to pickle file

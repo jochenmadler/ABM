@@ -373,7 +373,10 @@ class EnergyCommunityModel(mesa.Model):
         self.datacollector.collect(self)
         self.time_index = self.update_time_index()
         
-        return
+        mean_n_d_share = round(np.mean([a.n_d_share_mean for a in self.schedule.agents]),2)
+        mean_n_s_share = round(np.mean([a.n_s_share_mean for a in self.schedule.agents]),2)
+        
+        return mean_n_d_share, mean_n_s_share
 
     def run_model(self, n):
         for i in range(n):
