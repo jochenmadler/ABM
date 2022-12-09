@@ -382,10 +382,8 @@ class CommunityMember(mesa.Agent):
             # market clearing: considering p2p max trading volume, update agent's trading quantities
             self.price_n_d, self.price_n_s=self.model.n_d_price_t, self.model.n_s_price_t
             # determine agent's share of community's p2p energy bought/sold
-            a_share_n_d=self.n_d_track / \
-                self.model.n_d_volume_t if self.model.n_d_volume_t > 0 else 0
-            a_share_n_s=self.n_s_track / \
-                self.model.n_s_volume_t if self.model.n_s_volume_t > 0 else 0
+            a_share_n_d=self.n_d_track / self.model.n_d_volume_t if self.model.n_d_volume_t > 0 else 0
+            a_share_n_s=self.n_s_track / self.model.n_s_volume_t if self.model.n_s_volume_t > 0 else 0
             a_d_t, a_s_t=self.g_d_track + self.n_d_track, self.g_s_track + self.n_s_track
             # store energy traded with p2p before market clearing
             self.n_d_track_old, self.n_s_track_old=self.n_d_track, self.n_s_track
@@ -394,8 +392,8 @@ class CommunityMember(mesa.Agent):
             self.n_s_track=a_share_n_s * self.model.n_max_trading_volume_t
             # update agent's grid energy bought/sold according to new p2p trading quantities
             self.g_d_track, self.g_s_track=a_d_t - self.n_d_track, a_s_t - self.n_s_track
-            # track share of optimal vs. actual p2p energy bought/sold for future assessment during optimization in a rolling queue
-            if self.n_d_binary_track > 0:
+            # store share of optimal vs. actual p2p energy bought/sold for future assessment during optimization in a LIFO queue
+            if not self.prosumer or (self.prosumer and self.n_d_binary_track > 0):
                 n_d_share_track_t=self.n_d_track / self.n_d_track_old if self.n_d_track_old > 0 else 0
                 self.n_d_share_tracker.append(n_d_share_track_t)
                 self.n_d_share_tracker.popleft()
