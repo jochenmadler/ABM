@@ -133,7 +133,6 @@ def get_mdf(data_dict_sc, year, season, adf_too=False):
         start_date = pd.to_datetime(f'{year}-09-15 00:00')
     mdf.index = pd.date_range(start_date, freq='15T', periods=len(mdf))
     if adf_too:
-        
         return [mdf, adf]
     else:
         return mdf
@@ -224,10 +223,11 @@ def calculate_measure(paths, date, scenario_dict, measure, to_df = False):
 def get_quick_measure_kpis(paths, date_t, scenarios, measure):
     # create empty df with custom cols
     measure_validity_check(measure)
+    base_cols = ['year', 'season', 'price', 'p2p', 'use case']
     if measure == 'welfare':
         cols = ['total_costs_all', 'total_costs_prosumer', 'total_costs_consumer', 'mean_gini']
     elif measure == 'stability':
-        cols = ['total_net_grid_demand', 'mean_net_grid_demand', 'std_net_grid_demand', 'times_crit_peak_demand']
+        cols = ['total_net_grid_demand', 'mean_net_grid_demand', 'std_net_grid_demand']
     else:
         cols = ['total kgCO2e_all', 'total_kgCO2e_prosumer', 'total_kgCO2e_consumer', 'mean_CO2e_gini']
     df = pd.DataFrame(columns=cols)
@@ -235,16 +235,32 @@ def get_quick_measure_kpis(paths, date_t, scenarios, measure):
     for i in range(len(scenarios)):
         sc = scenarios[i]
         mdf_sc = get_quick_mdf(paths, date_t, sc)
-        year, season = sc['pr_years'][0], sc['seasons'][0]
-        ind = f'sc{i}: {year}, {season}'
-        if measure == 'welfare':
-            df.loc[ind] = calculate_welfare_measures(mdf_sc, specifics=True)
-        elif measure == 'stability':
-            df.loc[ind] = calculate_stability_measures(mdf_sc, specifics = True)
+        year, season = int(sc['pr_years'][0]), sc['seasons'][0]
+        price = 'dynamic' if sc['pr_dynamic_options'][0] else 'static'
+        p2p = 'enabled' if sc['p2p_options'][0] else 'disabled'
+        ind = f'sc{i}'
+        if 'enabled' in p2p:
+            uc = 'uc_3: dynamic prices, p2p trading'
+        elif 'dynamic' in price:
+            uc = 'uc_2: dynamic prices, no p2p trading'
         else:
-            df.loc[ind] = calculate_sustainability_measures(mdf_sc, specifics = True)
-    
-    return df.T
+            uc = 'uc_1: static prices, no p2p trading'
+        # insert basic scenario description as base cols
+        df.loc[ind, base_cols] = year, season, price, p2p, uc
+        # obtain measure cols via measure-specific functions
+        if measure == 'welfare':
+            df.loc[ind, cols] = calculate_welfare_measures(mdf_sc, specifics=True)
+        elif measure == 'stability':
+            df.loc[ind, cols] = calculate_stability_measures(mdf_sc, specifics = True)
+        else:
+            df.loc[ind, cols] = calculate_sustainability_measures(mdf_sc, specifics = True)
+        # rearrange columns (base columns bc first, then measure columns mc)
+        new_cols = [*base_cols, *cols]
+        df = df[new_cols]
+        # change column dtypes
+        df.year = df.year.astype(int)
+        
+    return df
 
 
 
@@ -267,23 +283,25 @@ def plot_mdf(mdf, measure = None, ax = None):
     if 'welfare' in measure.lower():
         l_1 = ax.plot(mdf['costs_prosumer'], label = 'prosumer', color='green')
         l_2 = ax.plot(mdf['costs_consumer'], label = 'consumer', color='blue')
-        ax.set_ylabel('€ct')
+        ax.set_ylabel('total energy costs [€ct]')
         ax2 = ax.twinx()
         ax2.set_ylim(0,1)
         l_3 = ax2.plot(mdf['costs_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
-        ax2.set_ylabel('cost gini coeff.')
+        ax2.set_ylabel('energy costs gini coefficient')
     elif 'stability' in measure.lower():
         delta_g = mdf['g_d_all'] - mdf['g_s_all']
         l_1 = ax.plot(delta_g, label = 'net grid demand', color='blue')
         ax.set_ylabel('kWh')
     elif 'sustainability' in measure.lower():
-        l_1 = ax.plot(mdf['gco2e_prosumer'].apply(lambda x: 0 if x < 0 else x), label = 'prosumer', color='green')
-        l_2 = ax.plot(mdf['gco2e_consumer'], label = 'consumer', color='blue')
+        total_co2_emissions = mdf['gco2e_prosumer'].apply(lambda x: 0 if x < 0 else x) + mdf['gco2e_consumer']
+        l_1 = ax.plot(total_co2_emissions, label = 'total emissions', color='green')
+        #l_1 = ax.plot(mdf['gco2e_prosumer'].apply(lambda x: 0 if x < 0 else x), label = 'prosumer', color='green')
+        #l_2 = ax.plot(mdf['gco2e_consumer'], label = 'consumer', color='blue')
         ax.set_ylabel('gCO2e')
-        ax2 = ax.twinx()
-        ax2.set_ylim(0,1)
-        l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
-        ax2.set_ylabel('CO2e gini coeff.')
+        #ax2 = ax.twinx()
+        #ax2.set_ylim(0,1)
+        #l_3 = ax2.plot(mdf['co2e_gini'], label='gini coefficient', color='black', linestyle='--', linewidth=.5)
+        #ax2.set_ylabel('CO2e emissions gini coefficient')
     else: return
     # subplot title and combined legend
     year, month = mdf.index.year[0], mdf.index.month[0]
@@ -326,7 +344,7 @@ def plot_all_scenarios(paths, date, scenario_dict, measure = None):
         scenario_info_dict[sc] = [data_dict, seasons, years, p2p_bool, pr_bool]
     # set up plot
     nrows, ncols = years_max*seasons_max, len(scenario_dict.keys())
-    fig, ax = plt.subplots(figsize = (10,14), nrows=nrows, ncols=ncols, sharey=True)
+    fig, ax = plt.subplots(figsize = (10,13.5), nrows=nrows, ncols=ncols, sharey=True)
     for col in range(len(scenario_dict.keys())):
         sc = list(scenario_dict.keys())[col]
         row = 0
