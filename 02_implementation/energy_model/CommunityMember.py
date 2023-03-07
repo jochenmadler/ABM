@@ -185,7 +185,7 @@ class CommunityMember(mesa.Agent):
                     self.hb_c_binary[j] + self.hb_d_binary[j] <= 1, name=f'hb_c_bin_{j} + hb_d_bin_{j}')
                 # home battery state update, considering efficiency losses
                 if j < 1:
-                    self.m.addConstr(
+                    self.m.addConstr(   
                         self.hb_soc[j] - self.hb_c[j] * self.hb_eta_c +
                             self.hb_d[j] / self.hb_eta_d == self.hb_soc_t0,
                         name='hb_soc_update_0')
@@ -331,20 +331,28 @@ class CommunityMember(mesa.Agent):
         return res
 
     # obtain p2p trading price from model, run optimization, store result
-    def optimize_hems(self, current_p2p_price_level_nr):
+    def optimize_hems(self, current_p2p_price_level_nr, p2p_heuristic=True):
         rti = list(range(len(self.model.time_index)))
         self.price_n_d, self.price_n_s = self.model.n_d_price_t, self.model.n_s_price_t
         # consider uncertainty by taking the average of past p2p energy bought/sold for future p2p energy bought/sold
         self.n_d_share_mean, self.n_s_share_mean = np.mean(
             list(self.n_d_share_tracker)), np.mean(list(self.n_s_share_tracker))
-        self.m.setObjective(gp.quicksum(
-            self.price_g_d[i]*self.g_d[i] - self.price_g_s[i]*self.g_s[i] +
-            self.price_n_d[i]*self.n_d[i] - self.price_n_s[i]*self.n_s[i] +
-            self.lcoe_pv*self.pv[i] + self.lcoe_hb*self.hb_c[i] + self.lcoe_hb*self.hb_d[i] +
-            self.lcoe_ev*self.ev_c[i] + self.lcoe_ev*self.ev_d[i] +
-            (1-self.n_d_share_mean)*self.n_d[i] * (self.price_g_d[i]-self.price_n_d[i]) +
-            (1-self.n_s_share_mean)*self.n_s[i] * (self.price_n_s[i]-self.price_g_s[i])
-            for i in rti),GRB.MINIMIZE)
+        if p2p_heuristic:
+            self.m.setObjective(gp.quicksum(
+                self.price_g_d[i]*self.g_d[i] - self.price_g_s[i]*self.g_s[i] +
+                self.price_n_d[i]*self.n_d[i] - self.price_n_s[i]*self.n_s[i] +
+                self.lcoe_pv*self.pv[i] + self.lcoe_hb*self.hb_c[i] + self.lcoe_hb*self.hb_d[i] +
+                self.lcoe_ev*self.ev_c[i] + self.lcoe_ev*self.ev_d[i] +
+                (1-self.n_d_share_mean)*self.n_d[i] * (self.price_g_d[i]-self.price_n_d[i]) +
+                (1-self.n_s_share_mean)*self.n_s[i] * (self.price_n_s[i]-self.price_g_s[i])
+                for i in rti),GRB.MINIMIZE)
+        else:
+            self.m.setObjective(gp.quicksum(
+                self.price_g_d[i]*self.g_d[i] - self.price_g_s[i]*self.g_s[i] +
+                self.price_n_d[i]*self.n_d[i] - self.price_n_s[i]*self.n_s[i] +
+                self.lcoe_pv*self.pv[i] + self.lcoe_hb*self.hb_c[i] + self.lcoe_hb*self.hb_d[i] +
+                self.lcoe_ev*self.ev_c[i] + self.lcoe_ev*self.ev_d[i]
+                for i in rti),GRB.MINIMIZE)
         self.m.optimize()
         # obtain agent's n_d and n_s from optimization result
         agent_n_d=[i.X for i in self.m.getVars() if 'n_d[' in i.VarName]

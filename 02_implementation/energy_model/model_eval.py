@@ -216,7 +216,7 @@ def calculate_measure(paths, date, scenario_dict, measure, to_df = False):
     # if only one scenario (instead of scenario_dict), return df
     if to_df and len(years) == 1 and len(seasons) == 1:
         return dict_out[sc_name][years[0]][seasons[0]]
-    else: 
+    else:
         return dict_out
 
 

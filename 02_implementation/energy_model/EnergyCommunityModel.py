@@ -316,7 +316,7 @@ class EnergyCommunityModel(mesa.Model):
         self.n_d_price_t, self.n_s_price_t = self.schedule.agents[
             0].price_g_d, self.schedule.agents[0].price_g_s
         for a in self.schedule.agents:
-            a.optimize_hems(0)
+            a.optimize_hems(0, p2p_heuristic = False) # TODO: set p2p_heuristic to True later
             a.store_hems_result(0)
         # set p2p price to grid price for tracking
         self.n_d_price_t, self.n_s_price_t = self.schedule.agents[
@@ -337,7 +337,7 @@ class EnergyCommunityModel(mesa.Model):
             a_n_d_volumes, a_n_s_volumes = np.zeros(
                 len(self.time_index)), np.zeros(len(self.time_index))
             for a in self.schedule.agents:
-                a_n_d, a_n_s = a.optimize_hems(i)
+                a_n_d, a_n_s = a.optimize_hems(i, p2p_heuristic = False) # TODO: set p2p_heuristic to True later
                 a_n_d_volumes = np.add(a_n_d_volumes, a_n_d)
                 a_n_s_volumes = np.add(a_n_s_volumes, a_n_s)
             self.n_volumes[i] = [a_n_d_volumes, a_n_s_volumes]
