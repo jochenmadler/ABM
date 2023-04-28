@@ -1,0 +1,1 @@
+model = create_model(paths, input_cdir_timestamp, scenario_t = scenario_8)
