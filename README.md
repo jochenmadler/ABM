@@ -30,7 +30,7 @@ Nonrelevant, because not used files are:
 - `model_vis.py`
 - `main.py`
 
-# Final remarks
+## Final remarks
 In my opinion, although the code works, is not super clean. I am currently working on a follow-up project that builds on this model, but is larger in scope (master thesis). Therefore, you can consider this repository to be archived, i.e. to not change in the future. In the new project that is not open-source yet, I hope to learn from this project and produce higher-quality code. I will probably open-source the new repository around November 2023.
 
 If you have any questions regarding this or the new project, feel free to reach me at [jochen.madler@tum.de](mailto:jochen.madler@tum.de). Cheers! :)
