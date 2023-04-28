@@ -75,6 +75,7 @@ class CommunityMember(mesa.Agent):
         # obtain latest data slice from model's time_index
         self.PV = np.array(self.model.database.qh_pv_generation_factors['qh_generation_factor'][
                                ti]) * self.annual_effective_pv_radiation_kWh
+        
         self.D_bl = np.array(
             self.model.database.qh_residential_load_profiles[self.residential_type][ti])
         # D_ev: Cut off ev demand beyond max. ev battery capacity - this energy will be (re-)charged during the journey
@@ -273,31 +274,21 @@ class CommunityMember(mesa.Agent):
         rti = list(range(len(self.model.time_index)))
         # update HEMS' constraints with current data
         if self.prosumer:
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'pv_ub_{i}') for i in rti], self.PV)
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'pv_sur_t_{i}') for i in rti], self.D_bl)
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'pv_sur_f_{i}') for i in rti], self.D_bl - self.big_M)
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'pv_ub_{i}') for i in rti], self.PV)
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'pv_sur_t_{i}') for i in rti], self.D_bl)
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'pv_sur_f_{i}') for i in rti], self.D_bl - self.big_M)
             if self.model.schedule.steps > 0:
-                self.m.setAttr('RHS', self.m.getConstrByName(
-                    'hb_soc_update_0'), self.hb_soc_t)
+                self.m.setAttr('RHS', self.m.getConstrByName('hb_soc_update_0'), self.hb_soc_t)
         if self.nr_evs > 0:
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'l_ev_{i}_f') for i in rti], self.L_ev)
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'l_ev_{i}_t') for i in rti], self.L_ev)
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'l_ev_{i}_f') for i in rti], self.L_ev)
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'l_ev_{i}_t') for i in rti], self.L_ev)
             if self.model.schedule.steps > 0:
                 self.m.setAttr('RHS', self.m.getConstrByName(
                     f'ev_soc_update_0'), self.ev_soc_t - self.D_ev[0])
-            self.m.setAttr('RHS', [self.m.getConstrByName(
-                f'ev_soc_update_{i}') for i in rti if i > 0], self.D_ev[1:])
-        self.m.setAttr('RHS', [self.m.getConstrByName(
-            f'D_bl_{i}_ub') for i in rti], self.D_bl)
-        self.m.setAttr('RHS', [self.m.getConstrByName(
-            f'D_bl_{i}_lb') for i in rti], self.D_bl)
-        self.m.setAttr('RHS', self.m.getConstrByName(
-            'D_bl_sum'), self.D_bl.sum())
+            self.m.setAttr('RHS', [self.m.getConstrByName(f'ev_soc_update_{i}') for i in rti if i > 0], self.D_ev[1:])
+        self.m.setAttr('RHS', [self.m.getConstrByName(f'D_bl_{i}_ub') for i in rti], self.D_bl)
+        self.m.setAttr('RHS', [self.m.getConstrByName(f'D_bl_{i}_lb') for i in rti], self.D_bl)
+        self.m.setAttr('RHS', self.m.getConstrByName('D_bl_sum'), self.D_bl.sum())
 
         return
 

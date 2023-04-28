@@ -1,0 +1,12 @@
+.Rproj,user/
+01_Mesa_tutorials
+tetraeder_solar/
+04_output/
+python_package_tests/
+2022_11_11_filepaths.pickle
+2022_11_13_filepaths.pickle
+04\ ABM.code-workspace
+__pycache__/
+.ipynb_checkpoints/
+custom_communities/*
+tetraeder_solar/*
