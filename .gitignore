@@ -8,5 +8,5 @@ python_package_tests/
 04\ ABM.code-workspace
 __pycache__/
 .ipynb_checkpoints/
-custom_communities/*
+03_data/custom_communities/*
 tetraeder_solar/*
