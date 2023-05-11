@@ -1,7 +1,7 @@
 # A multi-agent model of urban microgrids: Assessing the effects of energy-market shocks using real-world data
 based on work done during the FIM individual research phase in fall 2022 at Research Center Finance & Information Management, Branch Business & Information Systems Engineering of the Fraunhofer FIT.
 
-This code implements an agent-based model to simulate residential smart home behavior with peer-to-peer trading. The results are published in the Journal of Applied Energy (tbd: link to paper).
+This code implements an agent-based model to simulate residential smart home behavior with peer-to-peer trading. The resulting paper is published in the Journal of Applied Energy ([Link](https://www.sciencedirect.com/science/article/pii/S0306261923005445?via%3Dihub)).
 
 ## Data
 The underlying housing data was provided by tetraeder.solar and the city of Ingolstadt. Therefore, it is proprietary and not uploaded. However, data for an anonymized community can be found at `data_03/custom_communities`. This is the community composition used in the paper.
